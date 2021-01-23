@@ -72,22 +72,39 @@ func (endpointManager *EndpointManager) HandleNewEndpoint(conn *Conn) {
 	})
 
 	agent.pub.OnICECandidate(func(candidate *webrtc.ICECandidate) {
-		fmt.Println("candidate pub", candidate)
-		if pub.SignalingState().String() == "stable" {
-			if candidate != nil {
-				fmt.Println("sending sub can ", candidate)
-				conn.Trickle(id, candidate, 0)
-			}
+		if candidate == nil {
+			// Gathering done
+			log.Infof("gather candidate done")
+			return
 		}
+	if pub.CurrentRemoteDescription() != nil {
+	//	fmt.Println("candidate pub@@@@", candidate)
+				for _, cand := range agent.pubsendcandidates {
+					fmt.Println("candidate pub@@@@", candidate)
+					conn.Trickle(id, cand, 0)
+				}
+			agent.pubsendcandidates = []*webrtc.ICECandidate{}
+			conn.Trickle(id, candidate, 0)
+		} else {
+			agent.pubsendcandidates = append(agent.pubsendcandidates, candidate)
+	}
 	})
 
 	agent.sub.OnICECandidate(func(candidate *webrtc.ICECandidate) {
-		fmt.Println("candidate sub", candidate)
-		if pub.SignalingState().String() == "stable" {
-			if candidate != nil {
-				fmt.Println("sending sub can ", candidate)
-				conn.Trickle(id, candidate, 1)
+		if candidate == nil {
+			// Gathering done
+			log.Infof("gather candidate done")
+			return
+		}
+		if sub.CurrentRemoteDescription() != nil {
+			for _, cand := range agent.subsendcandidates {
+				fmt.Println("candidate sub@@@@", candidate)
+				conn.Trickle(id, cand, 1)
 			}
+			agent.subsendcandidates = []*webrtc.ICECandidate{}
+			conn.Trickle(id, candidate, 1)
+		} else {
+			agent.subsendcandidates = append(agent.subsendcandidates, candidate)
 		}
 	})
 
@@ -138,6 +155,8 @@ func (endpointManager *EndpointManager) HandleNewEndpoint(conn *Conn) {
 	if _, err = agent.sub.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio); err != nil {
 		panic(err)
 	}
+
+
 	offer, err := agent.pub.CreateOffer(nil)
 	if err != nil {
 		panic(err)
@@ -145,7 +164,6 @@ func (endpointManager *EndpointManager) HandleNewEndpoint(conn *Conn) {
 	if err := agent.pub.SetLocalDescription(offer); err != nil {
 		panic(err)
 	}
-
 	// temp join
 	conn.Join(id, offer)
 
@@ -153,6 +171,7 @@ func (endpointManager *EndpointManager) HandleNewEndpoint(conn *Conn) {
 
 	conn.On("onJoin", func(payload webrtc.SessionDescription) {
 		onJoin(conn, payload, id, endpoint)
+		// publish(conn, payload, id, endpoint)
 	})
 
 	conn.On("onDescription", func(payload webrtc.SessionDescription) {
@@ -164,6 +183,19 @@ func (endpointManager *EndpointManager) HandleNewEndpoint(conn *Conn) {
 	})
 }
 
+func publish(conn *Conn, payload webrtc.SessionDescription, id string, endpoint *Endpoint)  {
+	agent := endpoint.agents[id]
+	fmt.Println("reno needed")
+	reoffer, err := agent.pub.CreateOffer(nil)
+	if err != nil {
+		log.Errorf("offer error ", err)
+	}
+
+	agent.pub.SetLocalDescription(reoffer)
+
+	conn.Description(id, reoffer)
+}
+
 func onDescription(conn *Conn, payload webrtc.SessionDescription, id string, endpoint *Endpoint) {
 	agent := endpoint.agents[id]
 	agent.sub.SetRemoteDescription(payload)
@@ -173,14 +205,14 @@ func onDescription(conn *Conn, payload webrtc.SessionDescription, id string, end
 	}
 	gatherComplete := webrtc.GatheringCompletePromise(agent.sub)
 	agent.sub.SetLocalDescription(answer)
-	fmt.Println("answer =>@@", answer)
-	<-gatherComplete
+	// fmt.Println("answer =>@@", answer)
+	 <-gatherComplete
 	conn.Description(id, answer)
 }
 
 func onJoin(conn *Conn, payload webrtc.SessionDescription, id string, endpoint *Endpoint) {
 	agent := endpoint.agents[id]
-	fmt.Println("answer => % ", payload)
+	// fmt.Println("answer => % ", payload)
 
 	agent.pub.SetRemoteDescription(payload)
 	//
@@ -198,19 +230,24 @@ func onJoin(conn *Conn, payload webrtc.SessionDescription, id string, endpoint *
 }
 
 func onTrickle(conn *Conn, int webrtc.ICECandidateInit, target int, id string, endpoint *Endpoint)  {
-	fmt.Println("can@@@@", int, "target", target)
+	// fmt.Println("can@@@@", int, "target", target)
 	 agent := endpoint.agents[id]
 
 	 if target == 0 {
-	 	fmt.Println("addCan")
-		agent.pub.AddICECandidate(int)
+	 	if agent.pub.CurrentRemoteDescription() == nil {
+	 		agent.pubrecevcandidates = append(agent.pubrecevcandidates, int)
+		} else {
+			agent.pub.AddICECandidate(int)
+		}
+
 	 }
 	 if target == 1 {
+		 if agent.sub.CurrentRemoteDescription() == nil {
+		 	agent.subrecevcandidates = append(agent.subrecevcandidates, int)
+		 } else {
 			 agent.sub.AddICECandidate(int)
+		 }
 	 }
-	//fmt.Println("onOffer event => ", payload, "room id => ", agent)
-	//fmt.Println("pc", agent.pub)
-	//fmt.Println("pc", agent.sub)
 }
 
 

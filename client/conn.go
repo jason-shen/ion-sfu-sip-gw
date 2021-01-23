@@ -49,7 +49,7 @@ func (c *Conn) ClientStart() {
 				log.Err(err)
 			}
 			c.Emit("onJoin", answer)
-			fmt.Println("onJoin =>", payload)
+			// fmt.Println("onJoin =>", payload)
 
 		case *pb.SignalReply_Description:
 			var offer webrtc.SessionDescription
@@ -82,7 +82,7 @@ func (c *Conn) Join(id string, offer interface{}) {
 	if err != nil {
 		fmt.Println(err)
 	}
-	 fmt.Println("onOffer", marshalled)
+	//  fmt.Println("onOffer", marshalled)
 	c.client.Send(&pb.SignalRequest{
 		Id: id,
 		Payload: &pb.SignalRequest_Join{Join: &pb.JoinRequest{
@@ -97,7 +97,7 @@ func (c *Conn) Description(id string, description interface{}) {
 	if err != nil {
 		fmt.Println(err)
 	}
-	 fmt.Println("onAnswer", marshalled)
+	// fmt.Println("onAnswer", marshalled)
 	c.client.Send(&pb.SignalRequest{
 		Id: id,
 		Payload: &pb.SignalRequest_Description{
@@ -111,8 +111,8 @@ func (c *Conn) Trickle(id string, candidate *webrtc.ICECandidate, target int) {
 	if err != nil {
 		fmt.Println(err)
 	}
-	fmt.Println("trickle => ",marshalled)
-	fmt.Println("candidate trickle ", candidate)
+	//fmt.Println("trickle => ",marshalled)
+	// fmt.Println("candidate trickle ", candidate)
 	c.client.Send(&pb.SignalRequest{
 		Id: id,
 		Payload: &pb.SignalRequest_Trickle{
