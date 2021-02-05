@@ -41,12 +41,24 @@ func (endpointManager *EndpointManager) createAgent(id string) *Endpoint {
 func (endpointManager *EndpointManager) HandleNewEndpoint(conn *Conn) {
 	id := uuid.New().String()
 	endpoint := endpointManager.createAgent(id)
-	pub, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	pub, err := webrtc.NewPeerConnection(webrtc.Configuration{
+		ICEServers: []webrtc.ICEServer{
+			{
+				URLs: []string{"stun:stun.l.google.com:19302"},
+			},
+		},
+	})
 	if err != nil {
 		panic(err)
 	}
 
-	sub, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	sub, err := webrtc.NewPeerConnection(webrtc.Configuration{
+		ICEServers: []webrtc.ICEServer{
+			{
+				URLs: []string{"stun:stun.l.google.com:19302"},
+			},
+		},
+	})
 	if err != nil {
 		panic(err)
 	}
@@ -62,7 +74,7 @@ func (endpointManager *EndpointManager) HandleNewEndpoint(conn *Conn) {
 
 	// webrtc
 	agent := endpoint.agents[id]
-
+	fmt.Println("agents ", endpoint.agents)
 	agent.pub.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
 		log.Infof("Connection State has changed %s \n", connectionState.String())
 	})
@@ -77,14 +89,16 @@ func (endpointManager *EndpointManager) HandleNewEndpoint(conn *Conn) {
 			log.Infof("gather candidate done")
 			return
 		}
-	if pub.CurrentRemoteDescription() != nil {
+	if agent.pub.CurrentRemoteDescription() != nil {
 	//	fmt.Println("candidate pub@@@@", candidate)
 				for _, cand := range agent.pubsendcandidates {
 					fmt.Println("candidate pub@@@@", candidate)
+					fmt.Println("can", cand)
 					conn.Trickle(id, cand, 0)
 				}
 			agent.pubsendcandidates = []*webrtc.ICECandidate{}
-			conn.Trickle(id, candidate, 0)
+			fmt.Println("before sending")
+			 conn.Trickle(id, candidate, 0)
 		} else {
 			agent.pubsendcandidates = append(agent.pubsendcandidates, candidate)
 	}
@@ -96,7 +110,7 @@ func (endpointManager *EndpointManager) HandleNewEndpoint(conn *Conn) {
 			log.Infof("gather candidate done")
 			return
 		}
-		if sub.CurrentRemoteDescription() != nil {
+		if agent.sub.CurrentRemoteDescription() != nil {
 			for _, cand := range agent.subsendcandidates {
 				fmt.Println("candidate sub@@@@", candidate)
 				conn.Trickle(id, cand, 1)
@@ -136,16 +150,21 @@ func (endpointManager *EndpointManager) HandleNewEndpoint(conn *Conn) {
 	})
 
 	agent.sub.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		log.Infof("Got Opus track, saving to disk as output.ogg")
-		for {
-			rtpPacket, _, readErr := track.ReadRTP()
-			if readErr != nil {
-				panic(readErr)
-			}
-			if readErr := oggFile.WriteRTP(rtpPacket); readErr != nil {
-				panic(readErr)
+		fmt.Println("Got Opus track, saving to disk as output.ogg")
+		fmt.Println("track", track.Kind())
+		if track.Kind().String() == "audio" {
+			for {
+				rtpPacket, _, readErr := track.ReadRTP()
+				//fmt.Println("rtp", rtpPacket)
+				if readErr != nil {
+					panic(readErr)
+				}
+				if readErr := oggFile.WriteRTP(rtpPacket); readErr != nil {
+					panic(readErr)
+				}
 			}
 		}
+
 	})
 
 	if _, err = agent.pub.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio); err != nil {
@@ -166,7 +185,6 @@ func (endpointManager *EndpointManager) HandleNewEndpoint(conn *Conn) {
 	}
 	// temp join
 	conn.Join(id, offer)
-
 	// end webrtc
 
 	conn.On("onJoin", func(payload webrtc.SessionDescription) {
@@ -198,19 +216,85 @@ func publish(conn *Conn, payload webrtc.SessionDescription, id string, endpoint 
 
 func onDescription(conn *Conn, payload webrtc.SessionDescription, id string, endpoint *Endpoint) {
 	agent := endpoint.agents[id]
+	// fmt.Println("onDesc", payload)
 	agent.sub.SetRemoteDescription(payload)
+
+	if len(agent.pubrecevcandidates) > 0 {
+		for _, cand := range agent.pubrecevcandidates {
+			fmt.Println("sending cand => ", cand)
+			err := agent.pub.AddICECandidate(cand)
+			if err != nil {
+				log.Errorf("error add ice pub", err)
+			}
+		}
+	}
+	if len(agent.pubsendcandidates) > 0 {
+		for _, cand := range agent.pubsendcandidates {
+			fmt.Println("sending cand => ", cand)
+			conn.Trickle(id, cand, 0 )
+		}
+		agent.pubsendcandidates = []*webrtc.ICECandidate{}
+	}
+
+	if len(agent.subrecevcandidates) > 0 {
+		for _, cand := range agent.subrecevcandidates {
+			fmt.Println("sending cand => ", cand)
+			err := agent.sub.AddICECandidate(cand)
+			if err != nil {
+				log.Errorf("error add ice pub", err)
+			}
+		}
+	}
+	if len(agent.subsendcandidates) > 0 {
+		for _, cand := range agent.subsendcandidates {
+			fmt.Println("sending cand => ", cand)
+			conn.Trickle(id, cand, 0 )
+		}
+		agent.subsendcandidates = []*webrtc.ICECandidate{}
+	}
+
 	answer, err := agent.sub.CreateAnswer(nil)
 	if err != nil {
 		log.Errorf("answer failed", err)
 	}
-	gatherComplete := webrtc.GatheringCompletePromise(agent.sub)
+	// gatherComplete := webrtc.GatheringCompletePromise(agent.sub)
 	agent.sub.SetLocalDescription(answer)
+
 	// fmt.Println("answer =>@@", answer)
-	 <-gatherComplete
+	//<-gatherComplete
 	conn.Description(id, answer)
 }
 
 func onJoin(conn *Conn, payload webrtc.SessionDescription, id string, endpoint *Endpoint) {
+	//pub, err := webrtc.NewPeerConnection(webrtc.Configuration{
+	//	ICEServers: []webrtc.ICEServer{
+	//		{
+	//			URLs: []string{"stun:stun.l.google.com:19302"},
+	//		},
+	//	},
+	//})
+	//if err != nil {
+	//	panic(err)
+	//}
+	//
+	//sub, err := webrtc.NewPeerConnection(webrtc.Configuration{
+	//	ICEServers: []webrtc.ICEServer{
+	//		{
+	//			URLs: []string{"stun:stun.l.google.com:19302"},
+	//		},
+	//	},
+	//})
+	//if err != nil {
+	//	panic(err)
+	//}
+	//agentData := Agent{
+	//	conn: 	conn,
+	//	pub:    pub,
+	//	sub: 	sub,
+	//	info: 	AgentInfo{},
+	//}
+	//endpoint.agents[endpoint.uid] = agentData
+
 	agent := endpoint.agents[id]
 	// fmt.Println("answer => % ", payload)
 

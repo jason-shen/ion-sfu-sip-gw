@@ -5,32 +5,54 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/chuckpreslar/emission"
+	"github.com/cloudwebrtc/go-sip-ua/pkg/stack"
+	"github.com/cloudwebrtc/go-sip-ua/pkg/ua"
+	"github.com/ghettovoice/gosip/log"
 	pb "github.com/jason-shen/ion-sip-gw/proto"
 	"github.com/pion/webrtc/v3"
-	"github.com/rs/zerolog/log"
 	"io"
 	"sync"
+)
+
+var (
+	logger log.Logger
 )
 
 type Conn struct {
 	emission.Emitter
 	client pb.SFU_SignalClient
+	sipstack *stack.SipStack
+	sipua *ua.UserAgent
 	mutex *sync.Mutex
 	ctx context.Context
 	cancel context.CancelFunc
 }
 
-func NewConn(client pb.SFU_SignalClient, ctx context.Context, cancel context.CancelFunc) *Conn {
+func NewConn(client pb.SFU_SignalClient, ctx context.Context, cancel context.CancelFunc, stack *stack.SipStack, ua *ua.UserAgent) *Conn {
 	return &Conn{
 		Emitter: *emission.NewEmitter(),
 		client: client,
+		sipstack: stack,
+		sipua: ua,
 		mutex: new(sync.Mutex),
 		ctx: ctx,
 		cancel: cancel,
 	}
 }
 
+func (c *Conn) SipStart() {
+	listen := "0.0.0.0:5080"
+	logger.Infof("Listen => %s", listen)
 
+	if err := c.sipstack.Listen("udp", listen); err != nil {
+		logger.Panic(err)
+	}
+
+	if err := c.sipstack.Listen("tcp", listen); err != nil {
+		logger.Panic(err)
+	}
+
+}
 
 func (c *Conn) ClientStart() {
 	for {
@@ -46,7 +68,7 @@ func (c *Conn) ClientStart() {
 			var answer webrtc.SessionDescription
 			err := json.Unmarshal(payload.Join.Description, &answer)
 			if err != nil {
-				log.Err(err)
+				logger.Error(err)
 			}
 			c.Emit("onJoin", answer)
 			// fmt.Println("onJoin =>", payload)
@@ -55,7 +77,7 @@ func (c *Conn) ClientStart() {
 			var offer webrtc.SessionDescription
 			err := json.Unmarshal(payload.Description, &offer)
 			if err != nil {
-				log.Err(err)
+				logger.Error(err)
 			}
 			c.Emit("onDescription", offer)
 
@@ -107,12 +129,12 @@ func (c *Conn) Description(id string, description interface{}) {
 }
 
 func (c *Conn) Trickle(id string, candidate *webrtc.ICECandidate, target int) {
-	marshalled, err := json.Marshal(candidate)
+	marshalled, err := json.Marshal(candidate.ToJSON())
 	if err != nil {
 		fmt.Println(err)
 	}
-	//fmt.Println("trickle => ",marshalled)
-	// fmt.Println("candidate trickle ", candidate)
+	fmt.Println("trickle => ",marshalled)
+	fmt.Println("candidate trickle ", candidate)
 	c.client.Send(&pb.SignalRequest{
 		Id: id,
 		Payload: &pb.SignalRequest_Trickle{
