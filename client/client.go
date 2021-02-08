@@ -39,6 +39,7 @@ func (endpointManager *EndpointManager) createAgent(id string) *Endpoint {
 }
 
 func (endpointManager *EndpointManager) HandleNewEndpoint(conn *Conn) {
+	logger.Infof("config => ", conn.conf.Server.Listen.UDP)
 	id := uuid.New().String()
 	endpoint := endpointManager.createAgent(id)
 	pub, err := webrtc.NewPeerConnection(webrtc.Configuration{

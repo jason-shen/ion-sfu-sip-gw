@@ -1,0 +1,29 @@
+#config.yml
+
+server:
+  listen:
+    udp: 0.0.0.0:5060
+    tcp: 0.0.0.0:5060
+    wss: 0.0.0.0:5081
+
+  actions:
+    inbound:
+      called: 100
+      dest: "siproom"
+    outbound:
+      called: "siproom"
+      dest: 300
+
+  auth:
+    endpoint1:
+      username: 100
+      password: 100
+      actions:
+        inbound: inbound
+        outbound: outbound
+    endpoint2:
+      username: 200
+      password: 200
+      actions:
+        inbound: inbound
+        outbound: outbound

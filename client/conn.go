@@ -8,6 +8,7 @@ import (
 	"github.com/cloudwebrtc/go-sip-ua/pkg/stack"
 	"github.com/cloudwebrtc/go-sip-ua/pkg/ua"
 	"github.com/ghettovoice/gosip/log"
+	"github.com/jason-shen/ion-sip-gw/config"
 	pb "github.com/jason-shen/ion-sip-gw/proto"
 	"github.com/pion/webrtc/v3"
 	"io"
@@ -26,9 +27,10 @@ type Conn struct {
 	mutex *sync.Mutex
 	ctx context.Context
 	cancel context.CancelFunc
+	conf *config.Config
 }
 
-func NewConn(client pb.SFU_SignalClient, ctx context.Context, cancel context.CancelFunc, stack *stack.SipStack, ua *ua.UserAgent) *Conn {
+func NewConn(client pb.SFU_SignalClient, ctx context.Context, cancel context.CancelFunc, stack *stack.SipStack, ua *ua.UserAgent, conf *config.Config) *Conn {
 	return &Conn{
 		Emitter: *emission.NewEmitter(),
 		client: client,
@@ -37,6 +39,7 @@ func NewConn(client pb.SFU_SignalClient, ctx context.Context, cancel context.Can
 		mutex: new(sync.Mutex),
 		ctx: ctx,
 		cancel: cancel,
+		conf: conf,
 	}
 }
 
